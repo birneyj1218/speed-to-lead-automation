@@ -1,0 +1,19 @@
+{
+  "name": "speed-to-lead-automation",
+  "version": "0.1.0",
+  "description": "Contact new leads within seconds: SMS text-back, AI voice call-back, CRM logging, quiet hours, dedup, retries, follow-ups and database reactivation. n8n workflow plus a tested Node.js decision engine.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "author": "Elwood (Jim) Birney",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "start": "node src/server.js",
+    "mock": "node mock/server.js",
+    "demo": "node scripts/demo.js",
+    "check:secrets": "sh scripts/check-secrets.sh"
+  }
+}

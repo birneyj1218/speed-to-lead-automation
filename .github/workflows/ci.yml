@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm test
+      - run: npm run demo
+      - name: Workflow and config are valid JSON
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('n8n/speed-to-lead.json','utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('config/blue-gable-roofing.json','utf8'))"

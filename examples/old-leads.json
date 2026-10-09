@@ -1,0 +1,9 @@
+[
+  { "id": "old-1", "name": "Avery Example", "phone": "312-555-0131", "consent": true, "last_contacted_at": "2026-03-02T15:00:00Z" },
+  { "id": "old-2", "name": "Blake Example", "phone": "312-555-0132", "consent": true, "last_contacted_at": "2026-01-20T15:00:00Z" },
+  { "id": "old-3", "name": "Cameron Example", "phone": "312-555-0133", "consent": false },
+  { "id": "old-4", "name": "Drew Example", "phone": "312-555-0177", "consent": true },
+  { "id": "old-5", "name": "Emery Example", "phone": "312-555-0131", "consent": true },
+  { "id": "old-6", "name": "Finley Example", "phone": "312-555-0136", "consent": true, "last_contacted_at": "2026-10-01T15:00:00Z" },
+  { "id": "old-7", "name": "Gray Example", "phone": "", "consent": true }
+]

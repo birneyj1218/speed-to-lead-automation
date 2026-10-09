@@ -1,0 +1,41 @@
+{
+  "business": {
+    "name": "Blue Gable Roofing",
+    "timezone": "America/Chicago",
+    "callbackNumberDisplay": "(312) 555-0100"
+  },
+  "requireConsent": true,
+  "businessHours": { "days": [1, 2, 3, 4, 5], "start": "08:00", "end": "17:00" },
+  "contactWindow": { "days": [0, 1, 2, 3, 4, 5, 6], "start": "09:00", "end": "20:00" },
+  "dedupWindowMinutes": 1440,
+  "sequence": [
+    { "id": "instant-text", "offsetMinutes": 0, "channel": "sms", "template": "instant" },
+    { "id": "instant-call", "offsetMinutes": 0, "channel": "call" },
+    { "id": "text-5m", "offsetMinutes": 5, "channel": "sms", "template": "followup_5m" },
+    { "id": "call-1h", "offsetMinutes": 60, "channel": "call" },
+    { "id": "text-next-day", "offsetMinutes": 1440, "channel": "sms", "template": "next_day" }
+  ],
+  "retry": { "maxAttempts": 3, "backoffMinutes": [1, 5, 15] },
+  "sms": { "sendOptOutConfirmation": true },
+  "voice": {
+    "businessHoursAssistant": "business_hours",
+    "afterHoursAssistant": "after_hours"
+  },
+  "facebook": { "consentField": "sms_consent" },
+  "reactivation": {
+    "messagesPerMinute": 6,
+    "dailyCap": 200,
+    "skipIfContactedWithinDays": 30,
+    "template": "reactivation"
+  },
+  "templates": {
+    "instant": "Hi {{firstName}}, this is {{business}}. Thanks for reaching out! We're calling you right now from this number. Reply STOP to opt out.",
+    "instant_after_hours": "Hi {{firstName}}, this is {{business}}. Thanks for reaching out! Our office is closed, but our assistant is calling now to get the details, and a person will follow up during business hours. Reply STOP to opt out.",
+    "followup_5m": "Sorry we missed you, {{firstName}}. When is a good time for a quick call about your project? You can also just reply here.",
+    "next_day": "Hi {{firstName}}, {{business}} following up on your request. Still need help? Reply with a good time and we'll call you.",
+    "reactivation": "Hi {{firstName}}, {{business}} here. You asked us about a project a while back. We have openings this month if you'd still like a free estimate. Reply YES for a call. Reply STOP to opt out.",
+    "opt_out_confirmation": "You're unsubscribed from {{business}} texts. No more messages will be sent.",
+    "opt_in_confirmation": "You're resubscribed to {{business}} texts. Reply STOP at any time to opt out.",
+    "help": "{{business}}: reply STOP to opt out, or call us at {{callbackNumber}}. Msg and data rates may apply."
+  }
+}

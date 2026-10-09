@@ -1,0 +1,1092 @@
+{
+  "name": "Speed-to-Lead: instant text-back, AI call-back, CRM, follow-ups",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Speed-to-lead (Blue Gable Roofing demo)\nA new lead gets an SMS text-back and an AI call-back within seconds, is logged in the CRM, and enters a follow-up sequence (text at 5 min, call at 1 h, text next day) that stops on reply, answered call, or STOP.\n\nAll rules (quiet hours, consent, dedup, retries, opt-out) live in the decision service (`npm start`). This workflow only moves data. See README.",
+        "height": 260,
+        "width": 520
+      },
+      "id": "e2224c94-1b57-4b43-a066-d576f858179e",
+      "name": "Note: overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -460,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Setup\n1. Set env vars from `.env.example` (base URLs default to the mock server).\n2. Create 3 credentials and select them on the red nodes: **Twilio** (Basic Auth: Account SID / Auth Token), **Vapi** (Header Auth: `Authorization` = `Bearer <key>`), **CRM** (Header Auth: `Authorization` = `Bearer <token>`).\n3. Facebook: Graph API credential on *Fetch lead from Graph API*.\n4. Reactivation webhook: Header Auth credential.\n5. Activate.",
+        "height": 260,
+        "width": 560
+      },
+      "id": "71e8ee54-f34c-49d4-af92-04a3ef863fba",
+      "name": "Note: setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        100,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "speed-to-lead/website",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "db322c79-bbf8-4352-a10a-2d85d68fcee8",
+      "name": "Website form",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        0
+      ],
+      "webhookId": "51fbc00d-60ad-43a9-a5a5-50b5e3715d97"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map((item) => ({ json: { source: 'website', payload: item.json.body ?? {} } }));"
+      },
+      "id": "c6576bc8-ecbb-46c5-ab5b-0d74160df0eb",
+      "name": "Prepare website lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "speed-to-lead/facebook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "bbc32e9c-f2a5-4895-ad8a-c67ecaec755d",
+      "name": "Facebook verify (GET)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        240
+      ],
+      "webhookId": "81511372-77a1-43bc-a81e-8d024b77a34d"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "16834098-338b-4952-af0a-6b2048b045ce",
+              "leftValue": "={{ $json.query['hub.verify_token'] }}",
+              "rightValue": "={{ $env.FB_VERIFY_TOKEN }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8eacec2a-c47e-4c7f-add5-cb334d04ab0a",
+      "name": "Verify token matches?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.query['hub.challenge'] }}",
+        "options": {}
+      },
+      "id": "c2016e60-0cab-48bf-a1b5-f9eb5bed04fc",
+      "name": "Return challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -20,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "forbidden",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "id": "ab604a36-0777-435f-a299-3aec7d4ffae4",
+      "name": "Reject",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -20,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "speed-to-lead/facebook",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "cb78e914-03f6-4007-a4a3-38ab94121914",
+      "name": "Facebook events (POST)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        480
+      ],
+      "webhookId": "37e78a13-67b4-4527-a80e-1b92ec8e4f90"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lead Ads send only a leadgen_id; comments carry the text. Same logic as parseFacebookWebhook() in src/normalize.js.\n// Production: verify X-Hub-Signature-256 against the raw body before trusting this (see docs/n8n-workflow.md).\nconst out = [];\nfor (const item of $input.all()) {\n  for (const entry of item.json.body?.entry ?? []) {\n    for (const change of entry.changes ?? []) {\n      const v = change.value ?? {};\n      if (change.field === 'leadgen') out.push({ json: { kind: 'leadgen', leadgenId: v.leadgen_id } });\n      else if (change.field === 'feed' && v.item === 'comment' && v.verb === 'add') out.push({ json: { kind: 'comment', source: 'facebook_comment', payload: v } });\n    }\n  }\n}\nreturn out;"
+      },
+      "id": "6854fa23-4980-4eac-ac40-9420f0320d44",
+      "name": "Split Facebook events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "4a01dcec-c765-4b95-a8d8-329c998df42f",
+              "leftValue": "={{ $json.kind }}",
+              "rightValue": "leadgen",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "148c1bd3-9d3d-4778-af84-46700d9c0e77",
+      "name": "Lead ad or comment?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -20,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.FB_GRAPH_BASE_URL }}/{{ $json.leadgenId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "id,created_time,form_id,field_data"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "ea3c918c-252b-49cd-abf4-5fa15fa845c1",
+      "name": "Fetch lead from Graph API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        200,
+        420
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map((item) => ({ json: { source: 'facebook_lead_ad', payload: item.json } }));"
+      },
+      "id": "35953473-2933-449e-a055-b732e7b3e9c4",
+      "name": "Prepare Facebook lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DECISION_API_URL }}/leads",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.DECISION_API_KEY || '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ source: $json.source, payload: $json.payload }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "fbd7743b-dad5-4be9-a5f7-4d2d57654d8c",
+      "name": "Decide (decision service)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        120
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "eca5314a-3d6b-4657-af1c-aed5e3c24b95",
+              "leftValue": "={{ !!$json.crm }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "be169684-cc77-47ac-ac2b-393beb0c1bd3",
+      "name": "Has CRM update?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.GHL_BASE_URL }}/contacts/upsert",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Version",
+              "value": "2021-07-28"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ locationId: $env.GHL_LOCATION_ID, firstName: $json.crm.firstName || undefined, lastName: $json.crm.lastName || undefined, phone: $json.crm.phone || undefined, email: $json.crm.email || undefined, source: $json.crm.source, tags: $json.crm.tags }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "b8880b16-c17e-4719-a7cf-1aa1634ec5c2",
+      "name": "Upsert CRM contact (GoHighLevel-style)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        -120
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CRM_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ event: 'lead.upsert', lead: $json.crm }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "a2c3221e-2589-489e-a6d4-69bdafde8747",
+      "name": "CRM webhook (generic alternative)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        20
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "onError": "continueRegularOutput",
+      "disabled": true,
+      "notes": "Enable this instead of the GoHighLevel node to post leads to any CRM or catch hook."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Both the new-lead decision and the every-minute check return { actions: [...] }.\nreturn $input.all().flatMap((item) => (item.json.actions ?? []).map((action) => ({ json: action })));"
+      },
+      "id": "123716c6-f8e3-48a1-a5bf-82fb86cfc92a",
+      "name": "Actions to items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "ef55c6ea-ae48-47eb-aac4-204c3755fa88",
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "sms",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "SMS"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "358a83a1-615a-4fb5-ab8e-9d3f0c9ca504",
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "call",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Call"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ae55f0ae-89f4-4a1b-a911-23e132b5a97d",
+      "name": "SMS or call?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TWILIO_BASE_URL }}/2010-04-01/Accounts/{{ $env.TWILIO_ACCOUNT_SID }}/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.to }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_FROM_NUMBER }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json.body }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "fce584fc-ae1c-46ea-a3b0-27fa3d32ea5a",
+      "name": "Send SMS (Twilio)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        220
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "No node-level retry: the decision service schedules retries with backoff so they also respect quiet hours."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.VAPI_BASE_URL }}/call",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ assistantId: $json.assistant === 'after_hours' ? $env.VAPI_ASSISTANT_ID_AFTER_HOURS : $env.VAPI_ASSISTANT_ID_BUSINESS_HOURS, phoneNumberId: $env.VAPI_PHONE_NUMBER_ID, customer: { number: $json.to }, assistantOverrides: { variableValues: $json.variables } }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "da2842e4-6e76-4d69-ac4a-ea9529515701",
+      "name": "Start AI call (Vapi)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        380
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Pair the provider response with the action that caused it (n8n keeps item pairing through the HTTP node).\nconst action = $('SMS or call?').item.json;\nconst failed = Boolean($json.error);\nreturn {\n  json: {\n    stepId: action.stepId,\n    ok: !failed,\n    providerId: $json.sid ?? $json.id ?? null,\n    error: failed ? JSON.stringify($json.error).slice(0, 300) : null,\n  },\n};"
+      },
+      "id": "2b68acca-8944-4f7e-a432-b7e64b6f127c",
+      "name": "Build step result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DECISION_API_URL }}/steps/result",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.DECISION_API_KEY || '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "4c893bcf-c4b6-43b3-aecd-96dd21040bb6",
+      "name": "Report step result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1780,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "3c14fb8a-2881-4883-a919-fca5e56e69c8",
+      "name": "Every minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        440,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DECISION_API_URL }}/steps/due",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.DECISION_API_KEY || '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "233a4ea8-41d9-4b1c-ad6c-5b4d9e00821d",
+      "name": "Get due follow-ups",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        640
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "speed-to-lead/sms-inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "81c31def-114a-4e2f-afbc-43f5c6d7070d",
+      "name": "Inbound SMS (Twilio)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        760
+      ],
+      "webhookId": "1adf8d10-e987-42e4-a15e-989299bd5525"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DECISION_API_URL }}/inbound-sms",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.DECISION_API_KEY || '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ from: $json.body.From, body: $json.body.Body }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "09500dcc-1147-4954-ab8b-f4af8b5cb227",
+      "name": "Classify reply (STOP/HELP/reply)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -240,
+        760
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.reply ? '<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Message>' + $json.reply.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</Message></Response>' : '<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response/>' }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "id": "31adb720-950a-48eb-a595-4befe212789c",
+      "name": "Reply with TwiML",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -20,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "speed-to-lead/call-status",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "4321d616-1fa2-4d1a-a292-636dd5cb4718",
+      "name": "Call ended (Vapi webhook)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        980
+      ],
+      "webhookId": "6a143b0c-9109-453f-a05e-77847c7267c0"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DECISION_API_URL }}/call-status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.DECISION_API_KEY || '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "48c81c96-b44d-4d5b-a6b0-6c1d92b74b95",
+      "name": "Report call outcome",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -240,
+        980
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "speed-to-lead/reactivation",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "6c81f821-f49d-4b3e-a2d1-079583754be4",
+      "name": "Start reactivation batch",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        1200
+      ],
+      "webhookId": "f4d259a3-f0cd-4cd5-af36-33531a121c28"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DECISION_API_URL }}/reactivation",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.DECISION_API_KEY || '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ leads: $json.body.leads ?? [] }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "1222a4bf-5424-44e7-a662-6b097e4b7807",
+      "name": "Plan reactivation (rate limited)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -240,
+        1200
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    }
+  ],
+  "connections": {
+    "Website form": {
+      "main": [
+        [
+          {
+            "node": "Prepare website lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Facebook verify (GET)": {
+      "main": [
+        [
+          {
+            "node": "Verify token matches?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify token matches?": {
+      "main": [
+        [
+          {
+            "node": "Return challenge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Facebook events (POST)": {
+      "main": [
+        [
+          {
+            "node": "Split Facebook events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Facebook events": {
+      "main": [
+        [
+          {
+            "node": "Lead ad or comment?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead ad or comment?": {
+      "main": [
+        [
+          {
+            "node": "Fetch lead from Graph API",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Decide (decision service)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch lead from Graph API": {
+      "main": [
+        [
+          {
+            "node": "Prepare Facebook lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Facebook lead": {
+      "main": [
+        [
+          {
+            "node": "Decide (decision service)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare website lead": {
+      "main": [
+        [
+          {
+            "node": "Decide (decision service)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide (decision service)": {
+      "main": [
+        [
+          {
+            "node": "Has CRM update?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Actions to items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has CRM update?": {
+      "main": [
+        [
+          {
+            "node": "Upsert CRM contact (GoHighLevel-style)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "CRM webhook (generic alternative)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actions to items": {
+      "main": [
+        [
+          {
+            "node": "SMS or call?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SMS or call?": {
+      "main": [
+        [
+          {
+            "node": "Send SMS (Twilio)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Start AI call (Vapi)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send SMS (Twilio)": {
+      "main": [
+        [
+          {
+            "node": "Build step result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start AI call (Vapi)": {
+      "main": [
+        [
+          {
+            "node": "Build step result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build step result": {
+      "main": [
+        [
+          {
+            "node": "Report step result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every minute": {
+      "main": [
+        [
+          {
+            "node": "Get due follow-ups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get due follow-ups": {
+      "main": [
+        [
+          {
+            "node": "Actions to items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inbound SMS (Twilio)": {
+      "main": [
+        [
+          {
+            "node": "Classify reply (STOP/HELP/reply)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify reply (STOP/HELP/reply)": {
+      "main": [
+        [
+          {
+            "node": "Reply with TwiML",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Has CRM update?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call ended (Vapi webhook)": {
+      "main": [
+        [
+          {
+            "node": "Report call outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report call outcome": {
+      "main": [
+        [
+          {
+            "node": "Has CRM update?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start reactivation batch": {
+      "main": [
+        [
+          {
+            "node": "Plan reactivation (rate limited)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
